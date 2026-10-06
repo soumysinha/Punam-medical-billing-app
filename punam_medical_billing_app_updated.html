@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Punam Medical Agency - Billing App</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f2f5f8;color:#17202a}
+.app{max-width:1200px;margin:auto;padding:16px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:15px}
+h1{font-size:22px;margin:0}.sub{color:#667085;font-size:13px;margin-top:3px}
+.card{background:#fff;border-radius:12px;padding:15px;margin-bottom:15px;box-shadow:0 2px 10px #0000000d}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+label{font-size:12px;font-weight:bold;color:#475467;display:block;margin-bottom:4px}
+input,select{width:100%;padding:9px;border:1px solid #d0d5dd;border-radius:7px;font-size:14px}
+button{border:0;border-radius:7px;padding:9px 13px;font-weight:bold;cursor:pointer}
+.primary{background:#1261a0;color:#fff}.success{background:#18864b;color:#fff}.danger{background:#c93636;color:#fff}.light{background:#edf2f7;color:#243447}
+.actions{display:flex;gap:8px;flex-wrap:wrap}.tablewrap{overflow:auto}
+table{width:100%;border-collapse:collapse;min-width:1050px}th,td{border:1px solid #d9dee5;padding:6px;font-size:12px;text-align:center}th{background:#f5f7fa}
+td input,td select{padding:5px;font-size:12px;border-radius:4px}.num{width:70px}.desc{min-width:150px}.small{width:75px}
+.summary{margin-left:auto;max-width:430px}.row{display:flex;justify-content:space-between;padding:5px 0}.grand{font-size:18px;font-weight:bold;border-top:2px solid #222;padding-top:9px}
+.invoice-head{display:none}
+@media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}.grid2{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}}
+@media print{
+ body{background:#fff}.app{max-width:none;padding:0}.no-print{display:none!important}.card{box-shadow:none;padding:4px;margin:0 0 8px}.invoice-head{display:block;text-align:center}.invoice-head h1{font-size:24px}
+ input,select{border:0;padding:0;background:transparent}.tablewrap{overflow:visible}table{min-width:0}th,td{font-size:9px;padding:4px}#items th:nth-child(6),#items td:nth-child(6){width:4%}#items th:nth-child(7),#items td:nth-child(7){width:4%}#items th:nth-child(10),#items td:nth-child(10){width:5%}#items th:nth-child(11),#items td:nth-child(11){width:5%}#items th:nth-child(12),#items td:nth-child(12){width:10%;min-width:65px}.summary{max-width:330px}.print-title{display:block}
+}
+.details-split{display:grid;grid-template-columns:1fr 1fr;border:1px solid #cfd6df;border-radius:8px;overflow:hidden}.party-details,.invoice-details{padding:12px}.party-details{border-right:2px solid #8c98a8}.party-details>div,.invoice-details>div{margin-bottom:9px}.party-details>div:last-child,.invoice-details>div:last-child{margin-bottom:0}#state{max-width:100px}@media(max-width:800px){.details-split{grid-template-columns:1fr 1fr}.party-details{border-right:2px solid #8c98a8;border-bottom:0}}table{border:1px solid #aeb7c2}th,td{border-left:1px solid #aeb7c2;border-right:1px solid #aeb7c2}th:first-child,td:first-child{border-left:0}th:last-child,td:last-child{border-right:0}.history-empty{text-align:center;padding:18px;color:#667085}.history-btn{padding:6px 9px;font-size:11px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top no-print">
+    <div><h1>🏥 Punam Medical Agency</h1><div class="sub">Billing & Tax Invoice Generator</div></div>
+    <div class="actions"><button class="light" onclick="newInvoice()">New Bill</button><button class="success" onclick="saveInvoiceAndPrint()">Print / Save PDF</button><button class="light" onclick="showHistory()">Invoice History</button></div>
+  </div>
+
+  <div class="card">
+    <div class="invoice-head">
+      <h1>PUNAM MEDICAL AGENCY</h1>Japla Road, Chhatarpur, Palamu, Jharkhand, 822113<br>
+      DL No.: JH-PA2-168173 / 168174<br>GSTIN: 20CWOPS9338H1Z1<br>Phone: 7079050769<br><br><b>GST INVOICE</b>
+    </div>
+    <div class="details-split">
+      <div class="party-details">
+        <div><label>Party Name</label><input id="party"></div>
+        <div><label>Address</label><input id="address"></div>
+        <div><label>DL Number</label><input id="dl"></div>
+        <div><label>State</label><input id="state" value="20"></div>
+      </div>
+      <div class="invoice-details">
+        <div><label>Invoice Number</label><input id="invNo" readonly></div>
+        <div><label>Invoice Date</label><input id="date" type="text" placeholder="DD/MM/YY" maxlength="8"></div>
+        <div><label>Due Date</label><input id="dueDate" type="text" placeholder="DD/MM/YY" readonly></div>
+        <div><label>Invoice Mode</label><select id="mode"><option>Cash</option><option>Credit</option></select></div>
+      </div>
+    </div>
+    <div style="margin-top:10px"><label>Customer GSTIN</label><input id="gstin"></div>
+  </div>
+
+  <div id="historyPanel" class="card no-print" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div><h2 style="margin:0;font-size:18px">Invoice History</h2><div class="sub">Saved invoices on this device</div></div>
+      <div class="actions"><button class="light" onclick="showHistory()">Close</button><button class="danger" onclick="resetInvoiceHistory()">Reset History</button><button class="danger" onclick="resetInvoiceNumber()">Reset Invoice No.</button></div>
+    </div>
+    <div class="tablewrap" style="margin-top:10px"><table id="historyTable" style="min-width:650px"><thead><tr><th>Invoice No.</th><th>Date</th><th>Party</th><th>Grand Total</th><th>Action</th></tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <div class="card">
+    <div class="actions no-print" style="margin-bottom:10px"><button class="primary" onclick="addRow()">+ Add Product</button><button class="light" onclick="saveDraft()">Save Draft</button><button class="light" onclick="loadDraft()">Load Draft</button></div>
+    <div class="tablewrap">
+      <table id="items">
+        <thead><tr>
+          <th>S.No.</th><th>Product Description</th><th>HSN</th><th>Batch No.</th><th>Expiry</th>
+          <th>Qty</th><th>Free</th><th>MRP</th><th>Rate</th><th>Disc %</th><th>GST %</th><th>Net Amount</th><th class="no-print">×</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="summary">
+      <div class="row"><span>Subtotal</span><b id="subtotal">₹0.00</b></div>
+      <div class="row"><span>Discount</span><b id="discount">₹0.00</b></div>
+      <div class="row"><span>Taxable Amount</span><b id="taxable">₹0.00</b></div>
+      <div class="row"><span>CGST 2.5%</span><b id="cgst">₹0.00</b></div>
+      <div class="row"><span>SGST 2.5%</span><b id="sgst">₹0.00</b></div>
+      <div class="row"><span>IGST</span><b id="igst">₹0.00</b></div>
+      <div class="row"><span>Round Off</span><b id="round">₹0.00</b></div>
+      <div class="row grand"><span>GRAND TOTAL</span><b id="grand">₹0.00</b></div>
+    </div>
+    <div style="margin-top:15px">
+      <label>Amount in Words</label><input id="words" readonly>
+    </div>
+    <div style="margin-top:12px">
+      <b>Terms & Conditions</b>
+      <ol style="font-size:12px;padding-left:20px">
+        <li>Goods once sold will not be taken back, except as per the return/replacement policy of the manufacturer/company.</li>
+        <li>Batch number, expiry, quantity and physical condition of goods should be checked at the time of delivery.</li>
+        <li>All disputes are subject to Chhatarpur jurisdiction.</li>
+        <li>The goods supplied in this invoice do not contravene section 18 of the drugs &amp; cosmetics Act.</li>
+      </ol>
+    </div>
+    <div class="actions no-print"><button class="success" onclick="saveInvoiceAndPrint()">Generate Bill / Print</button><button class="light" onclick="saveInvoice()">Save Invoice</button><button class="light" onclick="showHistory()">Invoice History</button><button class="danger" onclick="clearAll()">Clear</button></div>
+    <div style="display:flex;justify-content:space-between;margin-top:35px;font-size:12px"><span>Customer Signature</span><span>For PUNAM MEDICAL AGENCY<br><br>Authorized Signatory</span></div>
+  </div>
+</div>
+
+<script>
+const tbody=document.querySelector("#items tbody");
+const money=n=>"₹"+Number(n||0).toFixed(2);
+function addRow(data={}){
+ const tr=document.createElement("tr");
+ tr.innerHTML=`<td class="sn"></td>
+ <td><input class="desc" value="${data.desc||''}"></td><td><input class="small" value="${data.hsn||''}"></td>
+ <td><input class="small" value="${data.batch||''}"></td><td><input class="small" placeholder="MM/YY" value="${data.exp||''}"></td>
+ <td><input class="num qty" type="number" min="0" value="${data.qty||1}"></td><td><input class="num free" type="number" min="0" value="${data.free||0}"></td>
+ <td><input class="num mrp" type="number" min="0" value="${data.mrp||0}"></td><td><input class="num rate" type="number" min="0" value="${data.rate||0}"></td>
+ <td><input class="num discp" type="number" min="0" value="${data.discp||0}"></td><td><input class="num gst" type="number" min="0" value="${data.gst??5}"></td>
+ <td class="amount">₹0.00</td><td class="no-print"><button class="danger" onclick="this.closest('tr').remove();calc()">×</button></td>`;
+ tbody.appendChild(tr);
+ tr.querySelectorAll("input").forEach(x=>x.addEventListener("input",calc)); calc();
+}
+function calc(){
+ let sub=disc=tax=taxcg=taxsg=taxig=0;
+ [...tbody.rows].forEach((tr,i)=>{
+  tr.querySelector(".sn").textContent=i+1;
+  const q=+tr.querySelector(".qty").value||0, r=+tr.querySelector(".rate").value||0, d=+tr.querySelector(".discp").value||0, g=+tr.querySelector(".gst").value||0;
+  const base=q*r, discount=base*d/100, taxable=base-discount, gst=taxable*g/100;
+  tr.querySelector(".amount").textContent=money(taxable+gst);
+  sub+=base; disc+=discount; tax+=taxable;
+  taxcg+=gst/2; taxsg+=gst/2;
+ });
+ document.getElementById("subtotal").textContent=money(sub);
+ document.getElementById("discount").textContent=money(disc);
+ document.getElementById("taxable").textContent=money(tax);
+ document.getElementById("cgst").textContent=money(taxcg);
+ document.getElementById("sgst").textContent=money(taxsg);
+ document.getElementById("igst").textContent=money(0);
+ const beforeRound=tax+taxcg+taxsg+taxig, rounded=Math.round(beforeRound), ro=rounded-beforeRound;
+ document.getElementById("round").textContent=money(ro);
+ document.getElementById("grand").textContent=money(rounded);
+ document.getElementById("words").value=numberWords(rounded)+" Rupees Only";
+}
+function numberWords(n){
+ n=Math.floor(n); if(n===0)return"Zero";
+ const ones=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];
+ const tens=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
+ function under(x){if(x<20)return ones[x];if(x<100)return tens[Math.floor(x/10)]+(x%10?" "+ones[x%10]:"");return ones[Math.floor(x/100)]+" Hundred"+(x%100?" "+under(x%100):"")}
+ let s=""; if(n>=10000000){s+=under(Math.floor(n/10000000))+" Crore ";n%=10000000}
+ if(n>=100000){s+=under(Math.floor(n/100000))+" Lakh ";n%=100000}
+ if(n>=1000){s+=under(Math.floor(n/1000))+" Thousand ";n%=1000}
+ if(n)s+=under(n); return s.trim();
+}
+function formatDate(d){return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+String(d.getFullYear()).slice(-2);}
+function parseDateDDMMYY(s){const m=/^(\d{2})\/(\d{2})\/(\d{2})$/.exec(s||"");if(!m)return null;return new Date(2000+Number(m[3]),Number(m[2])-1,Number(m[1]));}
+function setDueDate(){const d=parseDateDDMMYY(document.getElementById("date").value);if(!d){document.getElementById("dueDate").value="";return;}const due=new Date(d.getFullYear(),d.getMonth()+1,d.getDate());document.getElementById("dueDate").value=formatDate(due);}
+function nextInvoiceNo(){if(localStorage.getItem("pmaInvoiceResetV2")!=="1"){localStorage.setItem("pmaInvoiceNo","1");localStorage.setItem("pmaInvoiceResetV2","1");}const n=Number(localStorage.getItem("pmaInvoiceNo")||"1");localStorage.setItem("pmaInvoiceNo",String(n+1));return "PMA-"+String(n).padStart(4,"0");}
+function newInvoice(){
+  // Start every new bill with a completely clean form.
+  document.getElementById("invNo").value=nextInvoiceNo();
+  document.getElementById("date").value=formatDate(new Date());
+  document.getElementById("dueDate").value="";
+  ["party","address","dl","state","gstin"].forEach(id=>{document.getElementById(id).value="";});
+  document.getElementById("mode").value="Cash";
+  tbody.innerHTML="";
+  for(let i=0;i<5;i++)addRow();
+  setDueDate();
+  document.getElementById("party").focus();
+}
+function clearAll(){if(confirm("Clear this bill?"))newInvoice();}
+function invoiceData(){
+ return {head:{invNo:invNo.value,date:date.value,dueDate:dueDate.value,party:party.value,gstin:gstin.value,address:address.value,dl:dl.value,state:state.value,mode:mode.value},
+ items:[...tbody.rows].map(tr=>[...tr.querySelectorAll("input")].map(x=>x.value)), total:document.getElementById("grand").textContent};
+}
+function getHistory(){return JSON.parse(localStorage.getItem("pmaInvoiceHistory")||"[]");}
+function saveInvoice(){
+ const data=invoiceData(); if(!data.head.invNo)return;
+ const list=getHistory(); const idx=list.findIndex(x=>x.head.invNo===data.head.invNo);
+ if(idx>=0) list[idx]=data; else list.push(data);
+ localStorage.setItem("pmaInvoiceHistory",JSON.stringify(list));
+ alert("Invoice "+data.head.invNo+" saved.");
+}
+function saveInvoiceAndPrint(){
+  saveInvoiceSilent();
+  renderHistory();
+  window.print();
+}
+function saveInvoiceSilent(){
+ const data=invoiceData();
+ if(!data.head.invNo) return false;
+ const list=getHistory();
+ const idx=list.findIndex(x=>x.head.invNo===data.head.invNo);
+ if(idx>=0) list[idx]=data; else list.push(data);
+ localStorage.setItem("pmaInvoiceHistory",JSON.stringify(list));
+ return true;
+}
+function showHistory(){
+ const panel=document.getElementById("historyPanel");
+ panel.style.display=panel.style.display==="none"?"block":"none";
+ if(panel.style.display==="block") renderHistory();
+}
+function renderHistory(){
+ const tb=document.querySelector("#historyTable tbody"), list=getHistory().slice().reverse(); tb.innerHTML="";
+ if(!list.length){tb.innerHTML='<tr><td colspan="5" class="history-empty">No saved invoices yet.</td></tr>';return;}
+ list.forEach((d,ri)=>{const tr=document.createElement("tr"); tr.innerHTML=`<td>${d.head.invNo}</td><td>${d.head.date||""}</td><td>${d.head.party||""}</td><td>${d.total||"₹0.00"}</td><td><button class="light history-btn" onclick="loadHistoryInvoice(${getHistory().length-1-ri})">View / Load</button></td>`;tb.appendChild(tr);});
+}
+function loadHistoryInvoice(index){
+ const list=getHistory(), d=list[index]; if(!d)return;
+ Object.entries(d.head).forEach(([k,v])=>{const el=document.getElementById(k);if(el)el.value=v;}); tbody.innerHTML="";
+ d.items.forEach(a=>addRow({desc:a[0],hsn:a[1],batch:a[2],exp:a[3],qty:a[4],free:a[5],mrp:a[6],rate:a[7],discp:a[8],gst:a[9]}));
+ setDueDate(); document.getElementById("historyPanel").style.display="none"; window.scrollTo({top:0,behavior:"smooth"});
+}
+function resetInvoiceHistory(){if(confirm("Delete all saved invoice history? This cannot be undone.")){localStorage.removeItem("pmaInvoiceHistory");renderHistory();}}
+function resetInvoiceNumber(){if(confirm("Reset invoice numbering? The next new bill will be PMA-0001.")){localStorage.removeItem("pmaInvoiceNo");localStorage.removeItem("pmaInvoiceResetV2");alert("Invoice numbering reset. Start a New Bill to get PMA-0001.");}}
+function saveDraft(){
+ const data={head:{invNo:invNo.value,date:date.value,dueDate:dueDate.value,party:party.value,gstin:gstin.value,address:address.value,dl:dl.value,state:state.value,mode:mode.value},
+ items:[...tbody.rows].map(tr=>[...tr.querySelectorAll("input")].map(x=>x.value))}; localStorage.setItem("pmaDraft",JSON.stringify(data));alert("Draft saved on this device.");
+}
+function loadDraft(){
+ const d=JSON.parse(localStorage.getItem("pmaDraft")||"null"); if(!d)return alert("No saved draft.");
+ Object.entries(d.head).forEach(([k,v])=>{const el=document.getElementById(k);if(el)el.value=v;}); tbody.innerHTML="";
+ d.items.forEach(a=>addRow({desc:a[0],hsn:a[1],batch:a[2],exp:a[3],qty:a[4],free:a[5],mrp:a[6],rate:a[7],discp:a[8],gst:a[9]}));
+}
+document.getElementById("date").addEventListener("input",setDueDate);
+document.getElementById("date").addEventListener("change",setDueDate);
+newInvoice();
+</script>
+</body>
+</html>
