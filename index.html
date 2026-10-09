@@ -32,7 +32,7 @@ td input,td select{padding:5px;font-size:15px;font-weight:600;border-radius:4px}
 <div class="app">
   <div class="top no-print">
     <div><h1>🏥 Punam Medical Agency</h1><div class="sub">Billing & Tax Invoice Generator</div></div>
-    <div class="actions"><button class="light" onclick="newInvoice()">New Bill</button><button class="success" onclick="saveInvoiceAndPrint()">Print / Save PDF</button><button class="light" onclick="showHistory()">Invoice History</button></div>
+    <div class="actions"><button class="light" onclick="newInvoice()">New Bill</button><button class="light" onclick="undoInvoiceNumber()">↩ Undo No.</button><button class="success" onclick="saveInvoiceAndPrint()">Print / Save PDF</button><button class="light" onclick="showHistory()">Invoice History</button></div>
   </div>
 
   <div class="card">
@@ -155,7 +155,49 @@ function numberWords(n){
 function formatDate(d){return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+String(d.getFullYear()).slice(-2);}
 function parseDateDDMMYY(s){const m=/^(\d{2})\/(\d{2})\/(\d{2})$/.exec(s||"");if(!m)return null;return new Date(2000+Number(m[3]),Number(m[2])-1,Number(m[1]));}
 function setDueDate(){const d=parseDateDDMMYY(document.getElementById("date").value);if(!d){document.getElementById("dueDate").value="";return;}const due=new Date(d.getFullYear(),d.getMonth()+1,d.getDate());document.getElementById("dueDate").value=formatDate(due);}
-function nextInvoiceNo(){if(localStorage.getItem("pmaInvoiceResetV2")!=="1"){localStorage.setItem("pmaInvoiceNo","1");localStorage.setItem("pmaInvoiceResetV2","1");}const n=Number(localStorage.getItem("pmaInvoiceNo")||"1");localStorage.setItem("pmaInvoiceNo",String(n+1));return "PMA-"+String(n).padStart(4,"0");}
+function formatInvoiceNo(value){
+ const m=String(value||"").match(/^PMA-0*(\d+)$/i);
+ return m ? "PMA-"+String(Number(m[1])).padStart(3,"0") : value;
+}
+function migrateInvoiceNumbers(){
+ // Update all previously saved invoice numbers in this device's history to the new 3-digit format.
+ const list=JSON.parse(localStorage.getItem("pmaInvoiceHistory")||"[]");
+ let changed=false;
+ list.forEach(d=>{if(d && d.head && d.head.invNo){const formatted=formatInvoiceNo(d.head.invNo);if(formatted!==d.head.invNo){d.head.invNo=formatted;changed=true;}}});
+ if(changed)localStorage.setItem("pmaInvoiceHistory",JSON.stringify(list));
+ const draft=JSON.parse(localStorage.getItem("pmaDraft")||"null");
+ if(draft && draft.head && draft.head.invNo){draft.head.invNo=formatInvoiceNo(draft.head.invNo);localStorage.setItem("pmaDraft",JSON.stringify(draft));}
+}
+function nextInvoiceNo(){
+ if(localStorage.getItem("pmaInvoiceResetV2")!=="1"){
+   localStorage.setItem("pmaInvoiceNo","1");localStorage.setItem("pmaInvoiceResetV2","1");
+ }
+ const n=Number(localStorage.getItem("pmaInvoiceNo")||"1");
+ localStorage.setItem("pmaInvoiceNo",String(n+1));
+ localStorage.setItem("pmaLastAllocatedInvoiceNo",String(n));
+ return "PMA-"+String(n).padStart(3,"0");
+}
+function undoInvoiceNumber(){
+ const current=formatInvoiceNo(document.getElementById("invNo").value);
+ const m=String(current||"").match(/^PMA-(\d+)$/);
+ if(!m)return alert("No invoice number to undo.");
+ const n=Number(m[1]);
+ const history=getHistory();
+ if(history.some(x=>x && x.head && formatInvoiceNo(x.head.invNo)===current)){
+   return alert("This invoice number is already saved. It cannot be rolled back.");
+ }
+ const counter=Number(localStorage.getItem("pmaInvoiceNo")||"1");
+ if(counter!==n+1 || Number(localStorage.getItem("pmaLastAllocatedInvoiceNo"))!==n){
+   return alert("Only the latest unused invoice number can be undone.");
+ }
+ if(n<=1)return alert("Invoice numbering cannot go below PMA-001.");
+ const previousNo="PMA-"+String(n-1).padStart(3,"0");
+ if(history.some(x=>x && x.head && formatInvoiceNo(x.head.invNo)===previousNo))return alert("Previous invoice number "+previousNo+" is already saved, so it cannot be reused.");
+ localStorage.setItem("pmaInvoiceNo",String(n));
+ localStorage.setItem("pmaLastAllocatedInvoiceNo",String(n-1));
+ document.getElementById("invNo").value=previousNo;
+ alert("Invoice number moved back to "+document.getElementById("invNo").value+". Next New Bill will use "+current+".");
+}
 function newInvoice(){
   // Start every new bill with a completely clean form.
   document.getElementById("invNo").value=nextInvoiceNo();
@@ -213,7 +255,7 @@ function renderHistory(){
  if(!matches.length){tb.innerHTML='<tr><td colspan="5" class="history-empty">No matching invoices found.</td></tr>';return;}
  matches.forEach(x=>{
    const d=x.d, tr=document.createElement("tr");
-   tr.innerHTML=`<td>${d.head.invNo}</td><td>${d.head.date||""}</td><td>${d.head.party||""}</td><td>${d.total||"₹0.00"}</td><td class="actions" style="justify-content:center"><button class="light history-btn" onclick="loadHistoryInvoice(${x.index})">Edit</button><button class="primary history-btn" onclick="duplicateInvoice(${x.index})">Duplicate</button></td>`;
+   tr.innerHTML=`<td>${d.head.invNo}</td><td>${d.head.date||""}</td><td>${d.head.party||""}</td><td>${d.total||"₹0.00"}</td><td class="actions" style="justify-content:center"><button class="light history-btn" onclick="loadHistoryInvoice(${x.index})">Edit</button><button class="primary history-btn" onclick="duplicateInvoice(${x.index})">Duplicate</button><button class="danger history-btn" onclick="deleteSavedInvoice(${x.index})">Delete</button></td>`;
    tb.appendChild(tr);
  });
 }
@@ -236,8 +278,17 @@ function duplicateInvoice(index){
  window.scrollTo({top:0,behavior:"smooth"});
  alert("Invoice duplicated. New Invoice No. " + document.getElementById("invNo").value);
 }
+function deleteSavedInvoice(index){
+ const list=getHistory(), item=list[index]; if(!item)return;
+ const no=item.head?.invNo||"this invoice";
+ if(!confirm("Delete saved invoice "+no+" from history? This cannot be undone. The invoice number will not be reused."))return;
+ list.splice(index,1);
+ localStorage.setItem("pmaInvoiceHistory",JSON.stringify(list));
+ renderHistory();
+ alert("Saved invoice "+no+" deleted from history.");
+}
 function resetInvoiceHistory(){if(confirm("Delete all saved invoice history? This cannot be undone.")){localStorage.removeItem("pmaInvoiceHistory");renderHistory();}}
-function resetInvoiceNumber(){if(confirm("Reset invoice numbering? The next new bill will be PMA-0001.")){localStorage.removeItem("pmaInvoiceNo");localStorage.removeItem("pmaInvoiceResetV2");alert("Invoice numbering reset. Start a New Bill to get PMA-0001.");}}
+function resetInvoiceNumber(){if(confirm("Reset invoice numbering? The next new bill will be PMA-001.")){localStorage.removeItem("pmaInvoiceNo");localStorage.removeItem("pmaInvoiceResetV2");localStorage.removeItem("pmaLastAllocatedInvoiceNo");alert("Invoice numbering reset. Start a New Bill to get PMA-001.");}}
 function saveDraft(){
  const data={head:{invNo:invNo.value,date:date.value,dueDate:dueDate.value,party:party.value,gstin:gstin.value,address:address.value,dl:dl.value,state:state.value,mode:mode.value},
  items:[...tbody.rows].map(tr=>[...tr.querySelectorAll("input")].map(x=>x.value))}; localStorage.setItem("pmaDraft",JSON.stringify(data));alert("Draft saved on this device.");
@@ -247,6 +298,7 @@ function loadDraft(){
  Object.entries(d.head).forEach(([k,v])=>{const el=document.getElementById(k);if(el)el.value=v;}); tbody.innerHTML="";
  d.items.forEach(a=>addRow({desc:a[0],hsn:a[1],batch:a[2],exp:a[3],qty:a[4],free:a[5],mrp:a[6],rate:a[7],discp:a[8],gst:a[9]}));
 }
+migrateInvoiceNumbers();
 document.getElementById("date").addEventListener("input",setDueDate);
 document.getElementById("date").addEventListener("change",setDueDate);
 newInvoice();
