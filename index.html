@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Punam Medical Agency - Billing App</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 *{box-sizing:border-box}body{margin:0;font-family:Inter,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#f2f5f8;color:#17202a;letter-spacing:.1px}
 .app{max-width:1200px;margin:auto;padding:16px}.top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:15px}
@@ -62,6 +63,26 @@ td input,td select{padding:5px;font-size:15px;font-weight:600;border-radius:4px}
       </div>
     </div>
     <div style="margin-top:10px"><label>Customer GSTIN</label><input id="gstin"></div>
+  </div>
+
+  <div class="card no-print" id="backupCard">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div><h2 style="margin:0;font-size:18px">Backup &amp; Restore</h2><div class="sub">अपने बिल और ऐप डेटा की कॉपी सुरक्षित रखें</div></div>
+      <div class="actions">
+        <button class="success" onclick="downloadPMABackup()">Download Backup</button>
+        <button class="light" onclick="document.getElementById('pmaBackupFile').click()">Restore from File</button>
+        <input id="pmaBackupFile" type="file" accept=".json,application/json" style="display:none" onchange="restorePMABackupFile(this)">
+      </div>
+    </div>
+    <div style="border-top:1px solid #e4e7ec;margin-top:12px;padding-top:12px">
+      <div class="actions" style="align-items:center">
+        <button class="primary" id="pmaDriveConnect" onclick="connectPmaGoogleDrive()">Connect Google Drive</button>
+        <button class="success" id="pmaDriveSync" onclick="syncPmaDriveBackup()" disabled>Sync Backup Now</button>
+        <span id="pmaDriveStatus" class="sub" role="status">Google Drive अभी connected नहीं है।</span>
+      </div>
+      <div class="sub" style="margin-top:7px">Drive connect करने के बाद ऐप में सेव किए गए बिलों का बैकअप अपने-आप अपडेट होगा। Google की अनुमति/टोकन की अवधि खत्म होने पर दोबारा Connect करना पड़ सकता है।</div>
+    </div>
+    <div class="sub" style="margin-top:8px">Restore करने पर इस डिवाइस का मौजूदा ऐप डेटा बदलेगा। पहले सुरक्षा बैकअप बनाया जाता है।</div>
   </div>
 
   <div id="historyPanel" class="card no-print" style="display:none">
@@ -238,6 +259,7 @@ function saveInvoice(){
  const list=getHistory(); const idx=list.findIndex(x=>x.head.invNo===data.head.invNo);
  if(idx>=0) list[idx]=data; else list.push(data);
  localStorage.setItem("pmaInvoiceHistory",JSON.stringify(list));
+ queuePmaDriveSync();
  alert("Invoice "+data.head.invNo+" saved.");
 }
 function saveInvoiceAndPrint(){
@@ -252,6 +274,7 @@ function saveInvoiceSilent(){
  const idx=list.findIndex(x=>x.head.invNo===data.head.invNo);
  if(idx>=0) list[idx]=data; else list.push(data);
  localStorage.setItem("pmaInvoiceHistory",JSON.stringify(list));
+ queuePmaDriveSync();
  return true;
 }
 function showHistory(){
@@ -301,20 +324,132 @@ function deleteSavedInvoice(index){
  if(!confirm("Delete saved invoice "+no+" from history? This cannot be undone. The invoice number will not be reused."))return;
  list.splice(index,1);
  localStorage.setItem("pmaInvoiceHistory",JSON.stringify(list));
+ queuePmaDriveSync();
  renderHistory();
  alert("Saved invoice "+no+" deleted from history.");
 }
-function resetInvoiceHistory(){if(confirm("Delete all saved invoice history? This cannot be undone.")){localStorage.removeItem("pmaInvoiceHistory");renderHistory();}}
+function resetInvoiceHistory(){if(confirm("Delete all saved invoice history? This cannot be undone.")){localStorage.removeItem("pmaInvoiceHistory");queuePmaDriveSync();renderHistory();}}
 function resetInvoiceNumber(){if(confirm("Reset invoice numbering? The next new bill will be PMA-001.")){localStorage.removeItem("pmaInvoiceNo");localStorage.removeItem("pmaInvoiceResetV2");localStorage.removeItem("pmaLastAllocatedInvoiceNo");alert("Invoice numbering reset. Start a New Bill to get PMA-001.");}}
 function saveDraft(){
  const data={head:{invNo:invNo.value,date:date.value,dueDate:dueDate.value,party:party.value,gstin:gstin.value,address:address.value,dl:dl.value,state:state.value,mode:mode.value},
- items:[...tbody.rows].map(tr=>[...tr.querySelectorAll("input")].map(x=>x.value))}; localStorage.setItem("pmaDraft",JSON.stringify(data));alert("Draft saved on this device.");
+ items:[...tbody.rows].map(tr=>[...tr.querySelectorAll("input")].map(x=>x.value))}; localStorage.setItem("pmaDraft",JSON.stringify(data));queuePmaDriveSync();alert("Draft saved on this device.");
 }
 function loadDraft(){
  const d=JSON.parse(localStorage.getItem("pmaDraft")||"null"); if(!d)return alert("No saved draft.");
  Object.entries(d.head).forEach(([k,v])=>{const el=document.getElementById(k);if(el)el.value=v;}); tbody.innerHTML="";
  restoreItems(d.items);
 }
+// Backup & Restore: preserves all app data stored under the PMA prefix.
+const PMA_BACKUP_VERSION=1;
+function makePMABackupPayload(){
+  const data={};
+  for(let i=0;i<localStorage.length;i++){
+    const key=localStorage.key(i);
+    if(key && key.toLowerCase().startsWith("pma") && key!=="pmaSafetyBackupBeforeRestore") data[key]=localStorage.getItem(key);
+  }
+  return {format:"PUNAM_MEDICAL_AGENCY_BACKUP",version:PMA_BACKUP_VERSION,createdAt:new Date().toISOString(),data};
+}
+function downloadPMABackup(){
+  const payload=makePMABackupPayload();
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url;a.download="Punam_Medical_Agency_Backup_"+new Date().toISOString().slice(0,10)+".json";
+  document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  alert("Backup डाउनलोड शुरू हो गया है। Downloads फोल्डर में फाइल जाँच लें।");
+}
+function restorePMABackupFile(input){
+  const file=input.files && input.files[0]; if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const payload=JSON.parse(String(reader.result||""));
+      if(payload.format!=="PUNAM_MEDICAL_AGENCY_BACKUP" || payload.version!==PMA_BACKUP_VERSION || !payload.data || typeof payload.data!=="object"){
+        throw new Error("यह Punam Medical Agency की मान्य Backup फाइल नहीं है।");
+      }
+      if(!confirm("Restore करने पर इस डिवाइस का मौजूदा PMA डेटा बदल जाएगा। पहले वर्तमान डेटा की सुरक्षा कॉपी बनाई जाएगी। क्या आगे बढ़ें?"))return;
+      const safety=makePMABackupPayload();
+      localStorage.setItem("pmaSafetyBackupBeforeRestore",JSON.stringify(safety));
+      // Clear PMA app keys so restored data matches the selected backup exactly.
+      const removeKeys=[];
+      for(let i=0;i<localStorage.length;i++){
+        const key=localStorage.key(i);
+        if(key && key.toLowerCase().startsWith("pma") && key!=="pmaSafetyBackupBeforeRestore") removeKeys.push(key);
+      }
+      removeKeys.forEach(key=>localStorage.removeItem(key));
+      Object.keys(payload.data).forEach(key=>{
+        if(key.toLowerCase().startsWith("pma") && key!=="pmaSafetyBackupBeforeRestore") localStorage.setItem(key,String(payload.data[key]));
+      });
+      alert("Backup Restore हो गया। ऐप अब reload होगा।");
+      location.reload();
+    }catch(err){alert(err && err.message ? err.message : "Backup फाइल पढ़ने में समस्या हुई।");}
+    finally{input.value="";}
+  };
+  reader.onerror=()=>{alert("फाइल पढ़ी नहीं जा सकी।");input.value="";};
+  reader.readAsText(file);
+}
+
+// Google Drive backup integration (OAuth access token stays in memory only).
+const PMA_GOOGLE_CLIENT_ID="957534094758-g5oo7vn6066fokkib3ufph3f2il8ja9j.apps.googleusercontent.com";
+const PMA_DRIVE_BACKUP_NAME="Punam_Medical_Agency_Auto_Backup.json";
+let pmaGoogleTokenClient=null, pmaDriveAccessToken="", pmaDriveFileId="", pmaDriveSyncQueue=Promise.resolve();
+function setPmaDriveStatus(message){const el=document.getElementById("pmaDriveStatus");if(el)el.textContent=message;}
+function initPmaGoogleAuth(){
+  if(!window.google || !google.accounts || !google.accounts.oauth2){setTimeout(initPmaGoogleAuth,400);return;}
+  pmaGoogleTokenClient=google.accounts.oauth2.initTokenClient({
+    client_id:PMA_GOOGLE_CLIENT_ID,
+    scope:"https://www.googleapis.com/auth/drive.file",
+    callback:async (response)=>{
+      if(response.error){setPmaDriveStatus("Google Drive connection नहीं हो सका। फिर Connect करें।");return;}
+      pmaDriveAccessToken=response.access_token||"";
+      if(!pmaDriveAccessToken){setPmaDriveStatus("Drive token नहीं मिला। फिर Connect करें।");return;}
+      document.getElementById("pmaDriveSync").disabled=false;
+      document.getElementById("pmaDriveConnect").textContent="Reconnect Google Drive";
+      setPmaDriveStatus("Google Drive connected — पहला backup चल रहा है…");
+      await syncPmaDriveBackup();
+    }
+  });
+}
+function connectPmaGoogleDrive(){
+  if(!pmaGoogleTokenClient){setPmaDriveStatus("Google sign-in लोड हो रहा है। कुछ सेकंड बाद फिर दबाएँ।");initPmaGoogleAuth();return;}
+  setPmaDriveStatus("Google account चुनें और अनुमति दें…");
+  pmaGoogleTokenClient.requestAccessToken({prompt:""});
+}
+function queuePmaDriveSync(){
+  if(!pmaDriveAccessToken)return;
+  pmaDriveSyncQueue=pmaDriveSyncQueue.then(()=>syncPmaDriveBackup()).catch(err=>{console.warn("PMA Drive sync error",err);setPmaDriveStatus("Drive sync नहीं हुआ। Connect करके Sync Backup Now दबाएँ।");});
+}
+async function pmaDriveApi(url,options={}){
+  const response=await fetch(url,{...options,headers:{...(options.headers||{}),Authorization:"Bearer "+pmaDriveAccessToken}});
+  if(!response.ok){let detail="";try{detail=(await response.json()).error?.message||"";}catch{};throw new Error(detail||("Google Drive API error "+response.status));}
+  if(response.status===204)return null;
+  return response.json();
+}
+async function syncPmaDriveBackup(){
+  if(!pmaDriveAccessToken){setPmaDriveStatus("पहले Connect Google Drive दबाएँ।");return;}
+  const syncButton=document.getElementById("pmaDriveSync");if(syncButton)syncButton.disabled=true;
+  setPmaDriveStatus("Google Drive पर backup अपडेट हो रहा है…");
+  try{
+    const q="name='"+PMA_DRIVE_BACKUP_NAME+"' and trashed=false";
+    const found=await pmaDriveApi("https://www.googleapis.com/drive/v3/files?q="+encodeURIComponent(q)+"&fields=files(id,name)&pageSize=10");
+    pmaDriveFileId=found.files&&found.files.length?found.files[0].id:"";
+    const payload=JSON.stringify(makePMABackupPayload());
+    if(pmaDriveFileId){
+      await pmaDriveApi("https://www.googleapis.com/upload/drive/v3/files/"+encodeURIComponent(pmaDriveFileId)+"?uploadType=media",{method:"PATCH",headers:{"Content-Type":"application/json; charset=UTF-8"},body:payload});
+    }else{
+      const boundary="pma_drive_boundary_"+Date.now();
+      const metadata={name:PMA_DRIVE_BACKUP_NAME,mimeType:"application/json",description:"Automatic backup for Punam Medical Agency billing app"};
+      const body="--"+boundary+"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"+JSON.stringify(metadata)+"\r\n--"+boundary+"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"+payload+"\r\n--"+boundary+"--";
+      const created=await pmaDriveApi("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name",{method:"POST",headers:{"Content-Type":"multipart/related; boundary="+boundary},body});
+      pmaDriveFileId=created.id||"";
+    }
+    setPmaDriveStatus("Drive backup अपडेट हो गया: "+new Date().toLocaleString());
+  }catch(err){
+    console.warn("PMA Drive sync failed",err);
+    setPmaDriveStatus("Drive backup नहीं हुआ। फिर Connect Google Drive दबाकर अनुमति दें।");
+  }finally{if(syncButton)syncButton.disabled=!pmaDriveAccessToken;}
+}
+window.addEventListener("load",initPmaGoogleAuth);
+
 migrateInvoiceNumbers();
 document.getElementById("date").addEventListener("input",setDueDate);
 document.getElementById("date").addEventListener("change",setDueDate);
