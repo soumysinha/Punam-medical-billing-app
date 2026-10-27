@@ -38,7 +38,7 @@ td input,td select{padding:5px;font-size:15px;font-weight:600;border-radius:4px}
 <div class="app">
   <div class="top no-print">
     <div><h1>🏥 Punam Medical Agency</h1><div class="sub">Billing & Tax Invoice Generator</div></div>
-    <div class="actions"><button class="light" onclick="newInvoice()">New Bill</button><button class="light" onclick="undoInvoiceNumber()">↩ Undo No.</button><button class="success" onclick="saveInvoiceAndPrint()">Print / Save PDF</button><button class="light" onclick="showHistory()">Invoice History</button></div>
+    <div class="actions"><button class="light" onclick="togglePartyMaster()">Party Master</button><button class="light" onclick="newInvoice()">New Bill</button><button class="light" onclick="undoInvoiceNumber()">↩ Undo No.</button><button class="success" onclick="saveInvoiceAndPrint()">Print / Save PDF</button><button class="light" onclick="showHistory()">Invoice History</button></div>
   </div>
 
   <div class="card">
@@ -46,10 +46,16 @@ td input,td select{padding:5px;font-size:15px;font-weight:600;border-radius:4px}
       <h1>PUNAM MEDICAL AGENCY</h1>Japla Road, Chhatarpur, Palamu, Jharkhand, 822113<br>
       DL No.: JH-PA2-168173 / 168174<br>GSTIN: 20CWOPS9338H1Z1<br>Phone: 7079050769<br><br><b>GST INVOICE</b>
     </div>
+    <div class="no-print" id="invoicePartySearchBox" style="border:1px solid #b8cce0;background:#f5f9ff;border-radius:9px;padding:12px;margin-bottom:10px">
+      <label for="invoicePartySearch" style="font-size:14px;color:#174a7e">Search Party (separate area)</label>
+      <input id="invoicePartySearch" type="search" autocomplete="off" placeholder="Party name ka keyword likhein..." oninput="searchInvoiceParties()" style="font-size:16px;padding:11px">
+      <div id="invoicePartySearchResults" style="display:none;margin-top:8px;max-height:260px;overflow:auto;background:#fff;border:1px solid #d0d5dd;border-radius:7px"></div>
+      <div class="sub">Party select karte hi saved address, DL, state aur GSTIN invoice mein bhar jayega.</div>
+    </div>
     <div class="details-split">
       <div class="party-details">
         
-        <div><label>Party Name</label><input id="party"></div>
+        <div><label>Party Name</label><input id="party" placeholder="Select party using search above" readonly></div>
         <div><label>Address</label><input id="address"></div>
         <div><label>DL Number</label><input id="dl"></div>
         <div><label>State</label><input id="state" value="20"></div>
@@ -83,6 +89,27 @@ td input,td select{padding:5px;font-size:15px;font-weight:600;border-radius:4px}
       <div class="sub" style="margin-top:7px">Drive connect करने के बाद ऐप में सेव किए गए बिलों का बैकअप अपने-आप अपडेट होगा। Google की अनुमति/टोकन की अवधि खत्म होने पर दोबारा Connect करना पड़ सकता है।</div>
     </div>
     <div class="sub" style="margin-top:8px">Restore करने पर इस डिवाइस का मौजूदा ऐप डेटा बदलेगा। पहले सुरक्षा बैकअप बनाया जाता है।</div>
+  </div>
+
+  <div id="partyMasterPanel" class="card no-print" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div><h2 style="margin:0;font-size:18px">Party Master</h2><div class="sub">Save party details once and select them while creating invoices</div></div>
+      <div class="actions"><button class="light" onclick="clearPartyForm()">New Party</button><button class="light" onclick="togglePartyMaster()">Close</button></div>
+    </div>
+    <form id="partyForm" onsubmit="saveParty(event)" style="margin-top:12px">
+      <input type="hidden" id="masterPartyId">
+      <div class="grid">
+        <div><label for="masterPartyName">Party Name *</label><input id="masterPartyName" required maxlength="120" placeholder="Medical store / party name"></div>
+        <div><label for="masterPartyMobile">Mobile Number * (10 digits)</label><input id="masterPartyMobile" required inputmode="numeric" pattern="[0-9]{10}" maxlength="10" placeholder="10-digit mobile"></div>
+        <div><label for="masterPartyDL">DL Number</label><input id="masterPartyDL" placeholder="Drug licence number"></div>
+        <div><label for="masterPartyState">State Code</label><input id="masterPartyState" value="20" placeholder="20"></div>
+        <div style="grid-column:1/-1"><label for="masterPartyAddress">Address</label><input id="masterPartyAddress" placeholder="Full address"></div>
+        <div style="grid-column:1/-1"><label for="masterPartyGSTIN">Customer GSTIN</label><input id="masterPartyGSTIN" placeholder="GSTIN (if available)"></div>
+      </div>
+      <div class="actions" style="margin-top:10px"><button class="primary" type="submit">Save Party</button><button class="light" type="button" onclick="clearPartyForm()">Clear Form</button></div>
+    </form>
+    <div style="margin-top:16px"><label for="partyMasterSearch">Search Saved Parties</label><input id="partyMasterSearch" placeholder="Search by party name, mobile, address, DL or GSTIN..." oninput="renderPartyMaster()"></div>
+    <div class="tablewrap" style="margin-top:10px"><table id="partyMasterTable" style="min-width:850px"><thead><tr><th>Party Name</th><th>Mobile</th><th>Address</th><th>DL Number</th><th>State</th><th>GSTIN</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
   </div>
 
   <div id="historyPanel" class="card no-print" style="display:none">
@@ -187,6 +214,58 @@ function formatInvoiceNo(value){
  const m=String(value||"").match(/^PMA-0*(\d+)$/i);
  return m ? "PMA-"+String(Number(m[1])).padStart(3,"0") : value;
 }
+const PARTY_MASTER_KEY="pmaPartyMaster";
+function getParties(){try{return JSON.parse(localStorage.getItem(PARTY_MASTER_KEY)||"[]")}catch(e){return []}}
+function setParties(list){localStorage.setItem(PARTY_MASTER_KEY,JSON.stringify(list));if(typeof queuePmaDriveSync==='function')queuePmaDriveSync();}
+function togglePartyMaster(){const panel=document.getElementById("partyMasterPanel");panel.style.display=panel.style.display==="none"?"block":"none";if(panel.style.display==="block"){renderPartyMaster();document.getElementById("masterPartyName").focus();}}
+function clearPartyForm(){document.getElementById("partyForm").reset();document.getElementById("masterPartyId").value="";document.getElementById("masterPartyState").value="20";document.getElementById("masterPartyName").focus();}
+function saveParty(event){
+ event.preventDefault();
+ const id=document.getElementById("masterPartyId").value;
+ const name=document.getElementById("masterPartyName").value.trim();
+ const mobileNo=document.getElementById("masterPartyMobile").value.trim();
+ if(!name)return alert("Party name is required.");
+ if(!/^[0-9]{10}$/.test(mobileNo))return alert("Please enter a valid 10-digit mobile number.");
+ const partyObj={id:id||("party_"+Date.now()+"_"+Math.random().toString(36).slice(2,7)),name,mobile:mobileNo,address:document.getElementById("masterPartyAddress").value.trim(),dl:document.getElementById("masterPartyDL").value.trim(),state:document.getElementById("masterPartyState").value.trim()||"20",gstin:document.getElementById("masterPartyGSTIN").value.trim()};
+ const list=getParties();
+ const duplicate=list.find(x=>x.name.toLowerCase()===name.toLowerCase()&&x.id!==id);
+ if(duplicate&&!confirm("A party with this name already exists. Save another entry anyway?"))return;
+ const idx=list.findIndex(x=>x.id===id);if(idx>=0)list[idx]=partyObj;else list.push(partyObj);
+ setParties(list);refreshPartySuggestions();renderPartyMaster();clearPartyForm();alert("Party details saved successfully.");
+}
+function renderPartyMaster(){
+ const body=document.querySelector("#partyMasterTable tbody");if(!body)return;body.innerHTML="";
+ const q=(document.getElementById("partyMasterSearch")?.value||"").trim().toLowerCase();
+ const list=getParties().filter(x=>[x.name,x.mobile,x.address,x.dl,x.state,x.gstin].some(v=>String(v||"").toLowerCase().includes(q)));
+ if(!list.length){body.innerHTML='<tr><td colspan="7" class="history-empty">No saved parties found.</td></tr>';return;}
+ list.forEach(p=>{const tr=document.createElement("tr");
+  const vals=[p.name,p.mobile,p.address,p.dl,p.state,p.gstin];vals.forEach(v=>{const td=document.createElement("td");td.textContent=v||"—";tr.appendChild(td)});
+  const td=document.createElement("td");td.className="actions";td.style.justifyContent="center";
+  const edit=document.createElement("button");edit.className="light history-btn";edit.textContent="Edit";edit.onclick=()=>editParty(p.id);
+  const use=document.createElement("button");use.className="primary history-btn";use.textContent="Use";use.onclick=()=>{fillInvoiceParty(p);document.getElementById("partyMasterPanel").style.display="none";window.scrollTo({top:0,behavior:"smooth"});};
+  const del=document.createElement("button");del.className="danger history-btn";del.textContent="Delete";del.onclick=()=>deleteParty(p.id);
+  td.append(edit,use,del);tr.appendChild(td);body.appendChild(tr);
+ });
+}
+function editParty(id){const p=getParties().find(x=>x.id===id);if(!p)return;document.getElementById("masterPartyId").value=p.id;document.getElementById("masterPartyName").value=p.name||"";document.getElementById("masterPartyMobile").value=p.mobile||"";document.getElementById("masterPartyAddress").value=p.address||"";document.getElementById("masterPartyDL").value=p.dl||"";document.getElementById("masterPartyState").value=p.state||"20";document.getElementById("masterPartyGSTIN").value=p.gstin||"";document.getElementById("masterPartyName").focus();}
+function deleteParty(id){const p=getParties().find(x=>x.id===id);if(!p||!confirm("Delete party "+p.name+" from Party Master? Saved invoices will remain unchanged."))return;setParties(getParties().filter(x=>x.id!==id));refreshPartySuggestions();renderPartyMaster();}
+function refreshPartySuggestions(){searchInvoiceParties();}
+function searchInvoiceParties(){
+ const input=document.getElementById("invoicePartySearch"), box=document.getElementById("invoicePartySearchResults");if(!input||!box)return;
+ const q=input.value.trim().toLowerCase();box.innerHTML="";
+ if(!q){box.style.display="none";return;}
+ const list=getParties().filter(p=>[p.name,p.mobile,p.address,p.dl,p.state,p.gstin].some(v=>String(v||"").toLowerCase().includes(q))).sort((a,b)=>a.name.localeCompare(b.name));
+ box.style.display="block";
+ if(!list.length){box.textContent="Koi saved party nahi mili. Party Master mein pehle party save karein.";box.style.padding="12px";return;}
+ list.forEach(p=>{const row=document.createElement("div");row.style.cssText="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px;border-bottom:1px solid #eaecf0";
+ const info=document.createElement("div");info.style.minWidth="0";const name=document.createElement("div");name.style.fontWeight="700";name.textContent=p.name;const meta=document.createElement("div");meta.className="sub";meta.textContent=[p.mobile,p.address,p.gstin].filter(Boolean).join(" • ");info.append(name,meta);
+ const use=document.createElement("button");use.className="primary";use.textContent="Select";use.onclick=()=>{fillInvoiceParty(p);input.value=p.name;box.style.display="none";};row.append(info,use);box.appendChild(row);
+ });
+}
+function fillInvoiceParty(p){document.getElementById("party").value=p.name||"";document.getElementById("address").value=p.address||"";document.getElementById("dl").value=p.dl||"";document.getElementById("state").value=p.state||"20";document.getElementById("gstin").value=p.gstin||"";}
+function matchInvoiceParty(){searchInvoiceParties();}
+
+
 function migrateInvoiceNumbers(){
  // Update all previously saved invoice numbers in this device's history to the new 3-digit format.
  const list=JSON.parse(localStorage.getItem("pmaInvoiceHistory")||"[]");
@@ -415,8 +494,14 @@ function connectPmaGoogleDrive(){
   pmaGoogleTokenClient.requestAccessToken({prompt:""});
 }
 function queuePmaDriveSync(){
-  if(!pmaDriveAccessToken)return;
-  pmaDriveSyncQueue=pmaDriveSyncQueue.then(()=>syncPmaDriveBackup()).catch(err=>{console.warn("PMA Drive sync error",err);setPmaDriveStatus("Drive sync नहीं हुआ। Connect करके Sync Backup Now दबाएँ।");});
+  if(!pmaDriveAccessToken){
+    setPmaDriveStatus("बिल इस डिवाइस पर सेव है। Auto-sync के लिए Google Drive Connect करें।");
+    return;
+  }
+  pmaDriveSyncQueue=pmaDriveSyncQueue.then(()=>syncPmaDriveBackup()).catch(err=>{
+    console.warn("PMA Drive sync error",err);
+    setPmaDriveStatus("Drive sync नहीं हुआ। Connect करके Sync Backup Now दबाएँ।");
+  });
 }
 async function pmaDriveApi(url,options={}){
   const response=await fetch(url,{...options,headers:{...(options.headers||{}),Authorization:"Bearer "+pmaDriveAccessToken}});
@@ -448,12 +533,18 @@ async function syncPmaDriveBackup(){
     setPmaDriveStatus("Drive backup नहीं हुआ। फिर Connect Google Drive दबाकर अनुमति दें।");
   }finally{if(syncButton)syncButton.disabled=!pmaDriveAccessToken;}
 }
-window.addEventListener("load",initPmaGoogleAuth);
+window.addEventListener("load",()=>{
+  initPmaGoogleAuth();
+  // Access tokens are deliberately kept in memory, not localStorage.
+  // After a page/app restart, ask the user to reconnect if needed.
+  setPmaDriveStatus("इस बार ऐप खुलने पर Drive दोबारा Connect करना पड़ सकता है। पुराने बिल इस डिवाइस पर सुरक्षित हैं।");
+});
 
 migrateInvoiceNumbers();
 document.getElementById("date").addEventListener("input",setDueDate);
 document.getElementById("date").addEventListener("change",setDueDate);
 newInvoice();
+refreshPartySuggestions();
 </script>
 </body>
 </html>
