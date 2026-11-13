@@ -117,7 +117,16 @@ td input,td select{padding:5px;font-size:15px;font-weight:600;border-radius:4px}
       <div><h2 style="margin:0;font-size:18px">Invoice History</h2><div class="sub">Saved invoices on this device</div></div>
       <div class="actions"><button class="light" onclick="showHistory()">Close</button><button class="danger" onclick="resetInvoiceHistory()">Reset History</button><button class="danger" onclick="resetInvoiceNumber()">Reset Invoice No.</button></div>
     </div>
-    <div style="margin-top:10px"><input id="historySearch" placeholder="Search Invoice No., Party Name or Date..." oninput="renderHistory()"></div><div class="tablewrap" style="margin-top:10px"><table id="historyTable" style="min-width:760px"><thead><tr><th>Invoice No.</th><th>Date</th><th>Party</th><th>Grand Total</th><th>Action</th></tr></thead><tbody></tbody></table></div>
+    <div class="history-filters" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-top:12px">
+      <div><label for="historyMonth">Month</label><select id="historyMonth" onchange="renderHistory()"><option value="all">All Months</option><option value="01">January</option><option value="02">February</option><option value="03">March</option><option value="04">April</option><option value="05">May</option><option value="06">June</option><option value="07">July</option><option value="08">August</option><option value="09">September</option><option value="10">October</option><option value="11">November</option><option value="12">December</option></select></div>
+      <div><label for="historyYear">Year</label><select id="historyYear" onchange="renderHistory()"><option value="all">All Years</option></select></div>
+      <div style="grid-column:span 2"><label for="historySearch">Search Invoice / Party</label><input id="historySearch" placeholder="Invoice number or party name..." oninput="renderHistory()"></div>
+    </div>
+    <div id="historySummary" class="card" style="background:#f8fafc;border:1px solid #d8e2ec;margin-top:10px;padding:10px;box-shadow:none">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:10px"><div><div class="sub">Filtered invoices</div><b id="historyCount">0</b></div><div><div class="sub">Filtered billing total</div><b id="historyAmount">₹0.00</b></div></div>
+      <div id="partyHistorySummary" style="display:none;border-top:1px solid #d8e2ec;margin-top:10px;padding-top:10px"><b id="partyHistoryName"></b><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:10px;margin-top:7px"><div><div class="sub">Party total bills</div><b id="partyHistoryCount">0</b></div><div><div class="sub">Party lifetime billing</div><b id="partyHistoryAmount">₹0.00</b></div></div></div>
+    </div>
+    <div class="tablewrap" style="margin-top:10px"><table id="historyTable" style="min-width:760px"><thead><tr><th>Invoice No.</th><th>Date</th><th>Party</th><th>Grand Total</th><th>Action</th></tr></thead><tbody></tbody></table></div>
   </div>
 
   <div class="card">
@@ -361,20 +370,57 @@ function showHistory(){
  panel.style.display=panel.style.display==="none"?"block":"none";
  if(panel.style.display==="block"){
    const q=document.getElementById("historySearch"); if(q)q.value="";
+   const m=document.getElementById("historyMonth"); if(m)m.value="all";
+   const y=document.getElementById("historyYear"); if(y)y.value="all";
+   populateHistoryYears();
    renderHistory();
  }
 }
+function historyDateParts(value){
+ const m=/^(\d{2})\/(\d{2})\/(\d{2})$/.exec(String(value||""));
+ if(!m)return null;
+ return {month:m[2],year:String(2000+Number(m[3]))};
+}
+function historyAmount(value){
+ const n=Number(String(value||"").replace(/[^0-9.-]/g,""));
+ return Number.isFinite(n)?n:0;
+}
+function formatHistoryAmount(value){return "₹"+Number(value||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});}
+function populateHistoryYears(){
+ const select=document.getElementById("historyYear"); if(!select)return;
+ const old=select.value||"all", years=[...new Set(getHistory().map(x=>historyDateParts(x?.head?.date)?.year).filter(Boolean))].sort((a,b)=>Number(b)-Number(a));
+ select.innerHTML='<option value="all">All Years</option>'+years.map(y=>'<option value="'+y+'">'+y+'</option>').join("");
+ select.value=years.includes(old)?old:"all";
+}
 function renderHistory(){
+ populateHistoryYears();
  const tb=document.querySelector("#historyTable tbody"), all=getHistory(), q=(document.getElementById("historySearch")?.value||"").trim().toLowerCase();
+ const month=document.getElementById("historyMonth")?.value||"all", year=document.getElementById("historyYear")?.value||"all";
  tb.innerHTML="";
- const matches=all.map((d,index)=>({d,index})).filter(x=>{
+ const dated=all.map((d,index)=>({d,index,parts:historyDateParts(d?.head?.date)}));
+ const periodMatches=dated.filter(x=>(month==="all"||x.parts?.month===month)&&(year==="all"||x.parts?.year===year));
+ const matches=periodMatches.filter(x=>{
    if(!q)return true;
-   return [x.d.head.invNo,x.d.head.date,x.d.head.party,x.d.total].some(v=>String(v||"").toLowerCase().includes(q));
+   return [x.d?.head?.invNo,x.d?.head?.date,x.d?.head?.party,x.d?.total].some(v=>String(v||"").toLowerCase().includes(q));
  }).reverse();
+ const total=matches.reduce((sum,x)=>sum+historyAmount(x.d?.total),0);
+ document.getElementById("historyCount").textContent=String(matches.length);
+ document.getElementById("historyAmount").textContent=formatHistoryAmount(total);
+ // When the search text matches party names, show that party's lifetime total across all months.
+ const partyMatches=q?all.filter(d=>String(d?.head?.party||"").toLowerCase().includes(q)):[];
+ const partySummary=document.getElementById("partyHistorySummary");
+ if(partyMatches.length){
+   const names=[...new Set(partyMatches.map(d=>String(d.head.party||"").trim()).filter(Boolean))];
+   const exact=names.length===1?partyMatches:partyMatches;
+   document.getElementById("partyHistoryName").textContent=names.length===1?names[0]:"Matching parties (lifetime total)";
+   document.getElementById("partyHistoryCount").textContent=String(exact.length);
+   document.getElementById("partyHistoryAmount").textContent=formatHistoryAmount(exact.reduce((sum,d)=>sum+historyAmount(d.total),0));
+   partySummary.style.display="block";
+ }else partySummary.style.display="none";
  if(!matches.length){tb.innerHTML='<tr><td colspan="5" class="history-empty">No matching invoices found.</td></tr>';return;}
  matches.forEach(x=>{
    const d=x.d, tr=document.createElement("tr");
-   tr.innerHTML=`<td>${d.head.invNo}</td><td>${d.head.date||""}</td><td>${d.head.party||""}</td><td>${d.total||"₹0.00"}</td><td class="actions" style="justify-content:center"><button class="light history-btn" onclick="loadHistoryInvoice(${x.index})">Edit</button><button class="primary history-btn" onclick="duplicateInvoice(${x.index})">Duplicate</button><button class="danger history-btn" onclick="deleteSavedInvoice(${x.index})">Delete</button></td>`;
+   tr.innerHTML=`<td>${d.head?.invNo||""}</td><td>${d.head?.date||""}</td><td>${d.head?.party||""}</td><td>${d.total||"₹0.00"}</td><td class="actions" style="justify-content:center"><button class="light history-btn" onclick="loadHistoryInvoice(${x.index})">Edit</button><button class="primary history-btn" onclick="duplicateInvoice(${x.index})">Duplicate</button><button class="danger history-btn" onclick="deleteSavedInvoice(${x.index})">Delete</button></td>`;
    tb.appendChild(tr);
  });
 }
